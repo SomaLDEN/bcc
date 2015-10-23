@@ -571,10 +571,10 @@ class BPF(object):
         if ev_name not in open_kprobes:
             open_kprobes[ev_name] = {
                     "refcount" : 0,
-                    "readers" : []
+                    "readers" : {},
                     }
         open_kprobes[ev_name]["refcount"] += 1
-        open_kprobes[ev_name]["readers"].append(res)
+        open_kprobes[ev_name]["readers"][cpu] = res
         return self
 
     @staticmethod
@@ -617,10 +617,10 @@ class BPF(object):
         if ev_name not in open_kprobes:
             open_kprobes[ev_name] = {
                     "refcount" : 0,
-                    "readers" : []
+                    "readers" : {}
                     }
         open_kprobes[ev_name]["refcount"] += 1
-        open_kprobes[ev_name]["readers"].append(res)
+        open_kprobes[ev_name]["readers"][cpu] = res
         return self
 
     @staticmethod
