@@ -284,8 +284,10 @@ int bpf_detach_kprobe(const char *event_desc) {
   }
 
   if (write(kfd, event_desc, strlen(event_desc)) < 0) {
-    perror("write(kprobe_events)");
-    goto cleanup;
+    if (errno != EBUSY) {
+      perror("write(kprobe_events)");
+      goto cleanup;
+    }
   }
   rc = 0;
 
