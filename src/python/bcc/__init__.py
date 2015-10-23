@@ -110,7 +110,8 @@ stars_max = 40
 @atexit.register
 def cleanup_kprobes():
     for k, v in open_kprobes.items():
-        lib.perf_reader_free(v)
+        for _k in range(0, len(v["readers"])):
+            lib.perf_reader_free(v["readers"][_k])
         desc = "-:kprobes/%s" % k
         lib.bpf_detach_kprobe(desc.encode("ascii"))
     open_kprobes.clear()
@@ -567,15 +568,24 @@ class BPF(object):
         res = ct.cast(res, ct.c_void_p)
         if res == None:
             raise Exception("Failed to attach BPF to kprobe")
-        open_kprobes[ev_name] = res
+        if ev_name not in open_kprobes:
+            open_kprobes[ev_name] = {
+                    "refcount" : 0,
+                    "readers" : []
+                    }
+        open_kprobes[ev_name]["refcount"] += 1
+        open_kprobes[ev_name]["readers"].append(res)
         return self
 
     @staticmethod
-    def detach_kprobe(event):
+    def detach_kprobe(event, cpu):
         ev_name = "p_" + event.replace("+", "_").replace(".", "_")
         if ev_name not in open_kprobes:
             raise Exception("Kprobe %s is not attached" % event)
-        lib.perf_reader_free(open_kprobes[ev_name])
+        lib.perf_reader_free(open_kprobes[ev_name]["readers"][cpu])
+        open_kprobes[ev_name]["refcount"] -= 1
+        if open_kprobes[ev_name]["refcount"] != 0:
+            return
         desc = "-:kprobes/%s" % ev_name
         res = lib.bpf_detach_kprobe(desc.encode("ascii"))
         if res < 0:
@@ -604,7 +614,13 @@ class BPF(object):
         res = ct.cast(res, ct.c_void_p)
         if res == None:
             raise Exception("Failed to attach BPF to kprobe")
-        open_kprobes[ev_name] = res
+        if ev_name not in open_kprobes:
+            open_kprobes[ev_name] = {
+                    "refcount" : 0,
+                    "readers" : []
+                    }
+        open_kprobes[ev_name]["refcount"] += 1
+        open_kprobes[ev_name]["readers"].append(res)
         return self
 
     @staticmethod
@@ -612,7 +628,10 @@ class BPF(object):
         ev_name = "r_" + event.replace("+", "_").replace(".", "_")
         if ev_name not in open_kprobes:
             raise Exception("Kretprobe %s is not attached" % event)
-        lib.perf_reader_free(open_kprobes[ev_name])
+        lib.perf_reader_free(open_kprobes[ev_name]["readers"][cpu])
+        open_kprobes[ev_name]["refcount"] -= 1
+        if open_kprobes[ev_name]["refcount"] != 0:
+            return
         desc = "-:kprobes/%s" % ev_name
         res = lib.bpf_detach_kprobe(desc.encode("ascii"))
         if res < 0:
@@ -786,11 +805,17 @@ class BPF(object):
         Poll from the ring buffers for all of the open kprobes, calling the
         cb() that was given in the BPF constructor for each entry.
         """
-        readers = (ct.c_void_p * len(open_kprobes))()
-        for i, v in enumerate(open_kprobes.values()):
-            readers[i] = v
+        readers_len = 0
+        for k, v in open_kprobes.items():
+            readers_len += len(v["readers"])
+        readers = (ct.c_void_p * readers_len)()
+        i = 0
+        for k, v in open_kprobes.items():
+            for _k in range(0, len(v["readers"])):
+                readers[i] = v["readers"][_k]
+                i += 1
         try:
-            lib.perf_reader_poll(len(open_kprobes), readers, timeout)
+            lib.perf_reader_poll(readers_len, readers, timeout)
         except KeyboardInterrupt:
             pass
 

@@ -211,8 +211,10 @@ static int bpf_attach_tracing_event(int progfd, const char *event_path,
     goto cleanup;
 
   if (ioctl(pfd, PERF_EVENT_IOC_SET_BPF, progfd) < 0) {
-    perror("ioctl(PERF_EVENT_IOC_SET_BPF)");
-    goto cleanup;
+    if (errno != EEXIST) {
+      perror("ioctl(PERF_EVENT_IOC_SET_BPF)");
+      goto cleanup;
+    }
   }
   if (ioctl(pfd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
     perror("ioctl(PERF_EVENT_IOC_ENABLE)");
@@ -250,10 +252,12 @@ void * bpf_attach_kprobe(int progfd, const char *event,
   }
 
   if (write(kfd, event_desc, strlen(event_desc)) < 0) {
-    fprintf(stderr, "write of \"%s\" into kprobe_events failed: %s\n", event_desc, strerror(errno));
-    if (errno == EINVAL)
-      fprintf(stderr, "check dmesg output for possible cause\n");
-    goto cleanup;
+    if (errno != EBUSY) {
+      fprintf(stderr, "write of \"%s\" into kprobe_events failed: %s\n", event_desc, strerror(errno));
+      if (errno == EINVAL)
+        fprintf(stderr, "check dmesg output for possible cause\n");
+      goto cleanup;
+    }
   }
 
   snprintf(buf, sizeof(buf), "/sys/kernel/debug/tracing/events/kprobes/%s", event);
